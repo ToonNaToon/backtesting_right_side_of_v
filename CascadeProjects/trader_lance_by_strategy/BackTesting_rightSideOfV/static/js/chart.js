@@ -77,8 +77,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 param.point.y < 0 ||
                 param.point.y > container.clientHeight
             ) {
-                // Keep last clear state or hide? Let's leave it visible with last known or clear it.
-                // legend.innerHTML = '';
+                // Hide legend when crosshair is outside chart
+                legend.style.display = 'none';
                 return;
             }
 
@@ -87,9 +87,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const volumeData = param.seriesData.get(volumeSeries);
 
             if (!candleData) {
-                // legend.innerHTML = ''; 
+                // Hide legend if no candle data (chart not loaded yet)
+                legend.style.display = 'none';
                 return;
             }
+
+            // Show legend when we have data
+            legend.style.display = 'block';
 
             const open = candleData.open !== undefined ? candleData.open.toFixed(2) : '-';
             const high = candleData.high !== undefined ? candleData.high.toFixed(2) : '-';
@@ -101,8 +105,12 @@ document.addEventListener('DOMContentLoaded', () => {
             // param.time is epoch seconds.
             const dateStr = new Date(param.time * 1000).toLocaleString();
 
+            // Get current symbol from dropdown
+            const currentSymbol = symbolSelect.value || 'N/A';
+
             legend.innerHTML = `
-                <div style="font-size: 16px; margin-bottom: 4px;">Time: ${dateStr}</div>
+                <div style="font-size: 18px; margin-bottom: 6px; font-weight: 600;">${currentSymbol}</div>
+                <div style="font-size: 14px; margin-bottom: 4px; color: #999;">${dateStr}</div>
                 <div>O: <span style="color: #26a69a">${open}</span> H: <span style="color: #26a69a">${high}</span> L: <span style="color: #ef5350">${low}</span> C: <span style="color: #d1d4dc">${close}</span></div>
                 <div>Vol: <span style="color: #d1d4dc">${vol}</span></div>
             `;
@@ -143,11 +151,19 @@ document.addEventListener('DOMContentLoaded', () => {
     // Fetch Symbols on Load
     async function fetchSymbols() {
         console.log("Fetching symbols...");
+
+        // Show loading state in dropdown
+        symbolSelect.innerHTML = '<option value="" disabled selected>Loading symbols...</option>';
+        symbolSelect.disabled = true;
+
         try {
             const response = await fetch('/symbols');
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             const data = await response.json();
             console.log("Symbols received:", data);
+
+            // Clear loading state
+            symbolSelect.innerHTML = '<option value="" disabled selected>Select Symbol</option>';
 
             data.symbols.forEach(symbol => {
                 const option = document.createElement('option');
@@ -156,13 +172,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 symbolSelect.appendChild(option);
             });
 
-            // Auto-select first symbol if available
+            // Re-enable dropdown
+            symbolSelect.disabled = false;
+
+            // Auto-select first symbol but DON'T auto-load
+            // This allows users to see the UI before data loads
             if (data.symbols.length > 0) {
                 symbolSelect.value = data.symbols[0];
-                loadData(data.symbols[0]); // Auto load first
+                // Removed auto-load to show loading state properly
             }
         } catch (error) {
             console.error('Error fetching symbols:', error);
+            symbolSelect.innerHTML = '<option value="" disabled selected>Error loading symbols</option>';
             alert("Failed to load symbols: " + error.message);
         }
     }
@@ -172,7 +193,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!symbol) return;
         console.log("Loading data for", symbol);
 
-        loadingDiv.style.display = 'block';
+        // Show loading indicator with CSS class
+        loadingDiv.classList.add('active');
 
         const startDate = startDateInput.value;
         const endDate = endDateInput.value;
@@ -188,19 +210,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             const response = await fetch(url);
-            if (!response.ok) throw new Error('Failed to fetch data');
-
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             const data = await response.json();
 
-            // precise timestamps
-            const sortedOhlc = data.ohlc.sort((a, b) => a.time - b.time);
+            console.log("Data received:", data);
 
-            if (sortedOhlc.length === 0) {
-                alert("No data found for this symbol and date range.");
-                loadingDiv.style.display = 'none';
+            // Check if data is empty
+            if (!data.ohlc || data.ohlc.length === 0) {
+                alert("No data found for the selected criteria.");
                 return;
             }
 
+            // Sort OHLC by time (ascending)
+            const sortedOhlc = data.ohlc.sort((a, b) => a.time - b.time);
             console.log("OHLC Data Sample:", sortedOhlc[0]);
 
             candleSeries.setData(sortedOhlc);
@@ -218,7 +240,8 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('Error loading data:', error);
             alert('Error loading data for ' + symbol);
         } finally {
-            loadingDiv.style.display = 'none';
+            // Hide loading indicator
+            loadingDiv.classList.remove('active');
         }
     }
 
@@ -229,5 +252,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     symbolSelect.addEventListener('change', () => {
         loadData(symbolSelect.value);
+    });
+
+    // Auto-reload when date filters change
+    startDateInput.addEventListener('change', () => {
+        if (symbolSelect.value) {
+            loadData(symbolSelect.value);
+        }
+    });
+
+    endDateInput.addEventListener('change', () => {
+        if (symbolSelect.value) {
+            loadData(symbolSelect.value);
+        }
     });
 });
